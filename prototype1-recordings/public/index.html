@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Prototype 1 — Recordings</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="topbar">
+      <div class="brand">Recordings Prototype</div>
+      <div class="right">
+        <span id="roleBadge" class="badge hidden"></span>
+        <button id="logoutBtn" class="btn hidden">Log out</button>
+      </div>
+    </header>
+
+    <!-- LOGIN -->
+    <section id="viewLogin" class="card">
+      <h1>Log in</h1>
+      <p class="muted">Admin uses special credentials. Everyone else becomes a user.</p>
+      <form id="loginForm" class="form">
+        <label>
+          Username
+          <input name="username" required autocomplete="username" />
+        </label>
+        <label>
+          Password
+          <input name="password" type="password" required autocomplete="current-password" />
+        </label>
+        <button class="btn primary" type="submit">Log in</button>
+        <div id="loginError" class="error hidden"></div>
+      </form>
+    </section>
+
+    <!-- LANDING -->
+    <section id="viewLanding" class="card hidden">
+      <h1 id="welcomeTitle">Welcome</h1>
+      <p class="muted">This is Prototype 1: upload MP3 (admin) and play MP3 (user).</p>
+      <div class="row">
+        <button id="goRecordingsBtn" class="btn primary">Go to Recordings</button>
+      </div>
+    </section>
+
+    <!-- RECORDINGS -->
+    <section id="viewRecordings" class="card hidden">
+      <div class="row between">
+        <h1>Recordings</h1>
+        <button id="backBtn" class="btn">Back</button>
+      </div>
+
+      <!-- Admin upload -->
+      <div id="adminPanel" class="panel hidden">
+        <h2>Add recording (MP3)</h2>
+        <form id="uploadForm" class="form">
+          <label>
+            Title
+            <input name="title" required />
+          </label>
+          <label>
+            Description (optional)
+            <input name="description" />
+          </label>
+          <label>
+            MP3 file
+            <input name="file" type="file" accept=".mp3,audio/mpeg" required />
+          </label>
+          <button class="btn primary" type="submit">Upload</button>
+          <div id="uploadError" class="error hidden"></div>
+        </form>
+      </div>
+
+      <!-- List -->
+      <div id="recordingsList" class="list"></div>
+
+      <!-- Player -->
+      <div id="player" class="player hidden">
+        <div class="playerInfo">
+          <div id="playerTitle" class="playerTitle"></div>
+          <div id="playerDesc" class="muted"></div>
+        </div>
+        <audio id="audio" controls preload="metadata"></audio>
+      </div>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
