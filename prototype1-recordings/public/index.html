@@ -3,86 +3,259 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Prototype 1 — Recordings</title>
+  <title>Video Library Prototype</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="container">
+  <div class="app">
     <header class="topbar">
-      <div class="brand">Recordings Prototype</div>
-      <div class="right">
+      <div class="brand" role="button" tabindex="0" id="homeBrand">
+        <span class="dot"></span>
+        <span>Video Library</span>
+      </div>
+
+      <div class="topRight">
         <span id="roleBadge" class="badge hidden"></span>
-        <button id="logoutBtn" class="btn hidden">Log out</button>
+        <button id="logoutBtn" class="btn ghost hidden">Log out</button>
       </div>
     </header>
 
-    <!-- LOGIN -->
-    <section id="viewLogin" class="card">
-      <h1>Log in</h1>
-      <p class="muted">Admin uses special credentials. Everyone else becomes a user.</p>
-      <form id="loginForm" class="form">
-        <label>
-          Username
-          <input name="username" required autocomplete="username" />
-        </label>
-        <label>
-          Password
-          <input name="password" type="password" required autocomplete="current-password" />
-        </label>
-        <button class="btn primary" type="submit">Log in</button>
-        <div id="loginError" class="error hidden"></div>
-      </form>
-    </section>
-
-    <!-- LANDING -->
-    <section id="viewLanding" class="card hidden">
-      <h1 id="welcomeTitle">Welcome</h1>
-      <p class="muted">This is Prototype 1: upload MP3 (admin) and play MP3 (user).</p>
-      <div class="row">
-        <button id="goRecordingsBtn" class="btn primary">Go to Recordings</button>
-      </div>
-    </section>
-
-    <!-- RECORDINGS -->
-    <section id="viewRecordings" class="card hidden">
-      <div class="row between">
-        <h1>Recordings</h1>
-        <button id="backBtn" class="btn">Back</button>
-      </div>
-
-      <!-- Admin upload -->
-      <div id="adminPanel" class="panel hidden">
-        <h2>Add recording (MP3)</h2>
-        <form id="uploadForm" class="form">
-          <label>
-            Title
-            <input name="title" required />
-          </label>
-          <label>
-            Description (optional)
-            <input name="description" />
-          </label>
-          <label>
-            MP3 file
-            <input name="file" type="file" accept=".mp3,audio/mpeg" required />
-          </label>
-          <button class="btn primary" type="submit">Upload</button>
-          <div id="uploadError" class="error hidden"></div>
-        </form>
-      </div>
-
-      <!-- List -->
-      <div id="recordingsList" class="list"></div>
-
-      <!-- Player -->
-      <div id="player" class="player hidden">
-        <div class="playerInfo">
-          <div id="playerTitle" class="playerTitle"></div>
-          <div id="playerDesc" class="muted"></div>
+    <main class="container">
+      <!-- AUTH -->
+      <section id="viewAuth" class="card authCard hidden">
+        <div class="authHeader">
+          <h1>Welcome</h1>
+          <p class="muted">Sign up first, then log in.</p>
         </div>
-        <audio id="audio" controls preload="metadata"></audio>
-      </div>
-    </section>
+
+        <div class="tabs">
+          <button class="tab active" id="tabLogin">Log in</button>
+          <button class="tab" id="tabSignup">Sign up</button>
+        </div>
+
+        <div id="authLogin" class="tabPanel">
+          <form id="loginForm" class="form">
+            <label>
+              Username or email
+              <input name="identifier" autocomplete="username" required />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autocomplete="current-password" required />
+            </label>
+            <button class="btn primary" type="submit">Log in</button>
+            <div id="loginError" class="error hidden"></div>
+          </form>
+        </div>
+
+        <div id="authSignup" class="tabPanel hidden">
+          <form id="signupForm" class="form">
+            <div class="grid2">
+              <label>
+                Username
+                <input name="username" autocomplete="username" required />
+              </label>
+              <label>
+                Email
+                <input name="email" type="email" autocomplete="email" required />
+              </label>
+            </div>
+
+            <div class="grid2">
+              <label>
+                Password (min 6 chars)
+                <input name="password" type="password" autocomplete="new-password" required />
+              </label>
+              <label>
+                Confirm password
+                <input name="confirm" type="password" autocomplete="new-password" required />
+              </label>
+            </div>
+
+            <details class="details">
+              <summary>Admin signup (optional)</summary>
+              <p class="muted small">If your backend has an admin invite code, enter it here.</p>
+              <label>
+                Admin invite code
+                <input name="adminCode" placeholder="(optional)" />
+              </label>
+            </details>
+
+            <button class="btn primary" type="submit">Create account</button>
+            <div id="signupError" class="error hidden"></div>
+            <div id="signupOk" class="ok hidden">Account created. Please log in.</div>
+          </form>
+        </div>
+      </section>
+
+      <!-- USER HOME -->
+      <section id="viewUserHome" class="hidden">
+        <div class="pageHead">
+          <div>
+            <h1>Browse</h1>
+            <p class="muted">Choose a track, then a folder.</p>
+          </div>
+        </div>
+
+        <div class="cards2">
+          <button class="bigCard" id="goIELTS">
+            <div class="bigTitle">IELTS</div>
+            <div class="muted">Reading • Writing • Listening • Speaking</div>
+          </button>
+          <button class="bigCard" id="goSAT">
+            <div class="bigTitle">SAT</div>
+            <div class="muted">English • Math</div>
+          </button>
+        </div>
+      </section>
+
+      <!-- USER EXAM -->
+      <section id="viewUserExam" class="hidden">
+        <div class="pageHead">
+          <div>
+            <div class="crumb" id="userCrumb"></div>
+            <h1 id="examTitle">IELTS</h1>
+            <p class="muted">Pick a folder to see videos.</p>
+          </div>
+          <div class="row">
+            <button class="btn" id="backToUserHome">Back</button>
+          </div>
+        </div>
+        <div class="folderGrid" id="folderGrid"></div>
+      </section>
+
+      <!-- USER FOLDER -->
+      <section id="viewUserFolder" class="hidden">
+        <div class="pageHead">
+          <div>
+            <div class="crumb" id="folderCrumb"></div>
+            <h1 id="folderTitle">Folder</h1>
+            <p class="muted">Tap a card to play.</p>
+          </div>
+          <div class="row">
+            <button class="btn" id="backToExam">Back</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <input id="searchVideos" class="search" placeholder="Search videos..." />
+        </div>
+
+        <div class="videoGrid" id="videoGrid"></div>
+
+        <div class="player hidden" id="player">
+          <div class="playerTop">
+            <div>
+              <div class="playerTitle" id="playerTitle"></div>
+              <div class="muted small" id="playerMeta"></div>
+            </div>
+            <button class="btn ghost" id="closePlayer">Close</button>
+          </div>
+          <div id="playerBody"></div>
+          <div class="muted small" id="playerDesc"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN HOME -->
+      <section id="viewAdminHome" class="hidden">
+        <div class="pageHead">
+          <div>
+            <h1>Admin</h1>
+            <p class="muted">Manage folders and upload content.</p>
+          </div>
+        </div>
+
+        <div class="cards2">
+          <button class="bigCard" id="goFolders">
+            <div class="bigTitle">Manage folders</div>
+            <div class="muted">Add • rename • delete folders</div>
+          </button>
+          <button class="bigCard" id="goUploads">
+            <div class="bigTitle">Upload videos</div>
+            <div class="muted">Choose folder when uploading</div>
+          </button>
+        </div>
+      </section>
+
+      <!-- ADMIN FOLDERS -->
+      <section id="viewAdminFolders" class="hidden">
+        <div class="pageHead">
+          <div>
+            <div class="crumb">Admin › Folders</div>
+            <h1>Folders</h1>
+            <p class="muted">Create folders for IELTS/SAT. Users browse by these.</p>
+          </div>
+          <div class="row">
+            <button class="btn" id="backToAdminHome1">Back</button>
+          </div>
+        </div>
+
+        <div class="card inner">
+          <h2>Add folder</h2>
+          <form id="addFolderForm" class="form formInline">
+            <label>
+              Exam
+              <select name="exam">
+                <option value="IELTS">IELTS</option>
+                <option value="SAT">SAT</option>
+              </select>
+            </label>
+            <label>
+              Folder name
+              <input name="name" placeholder="e.g., Reading" required />
+            </label>
+            <button class="btn primary" type="submit">Add</button>
+          </form>
+          <div id="folderError" class="error hidden"></div>
+        </div>
+
+        <div class="list" id="folderList"></div>
+      </section>
+
+      <!-- ADMIN UPLOAD -->
+      <section id="viewAdminUploads" class="hidden">
+        <div class="pageHead">
+          <div>
+            <div class="crumb">Admin › Upload</div>
+            <h1>Upload</h1>
+            <p class="muted">Upload MP3/MP4/WEBM and assign to a folder.</p>
+          </div>
+          <div class="row">
+            <button class="btn" id="backToAdminHome2">Back</button>
+          </div>
+        </div>
+
+        <div class="card inner">
+          <form id="uploadForm" class="form">
+            <label>
+              Title
+              <input name="title" required />
+            </label>
+            <label>
+              Description (optional)
+              <input name="description" />
+            </label>
+            <label>
+              Folder
+              <select name="folderId" id="folderSelect" required></select>
+            </label>
+            <label>
+              File (MP4/WEBM recommended if you want to see the screen; MP3 is audio-only)
+              <input name="file" type="file" accept=".mp3,.mp4,.webm,audio/*,video/*" required />
+            </label>
+
+            <button class="btn primary" type="submit">Upload</button>
+            <div id="uploadError" class="error hidden"></div>
+            <div id="uploadOk" class="ok hidden">Uploaded.</div>
+          </form>
+        </div>
+
+        <div class="toolbar">
+          <input id="searchAdminVideos" class="search" placeholder="Search uploaded videos..." />
+        </div>
+        <div class="list" id="adminVideoList"></div>
+      </section>
+    </main>
   </div>
 
   <script src="/app.js"></script>

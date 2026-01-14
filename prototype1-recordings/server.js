@@ -4,32 +4,40 @@ const fs = require("fs");
 const multer = require("multer");
 const cookieParser = require("cookie-parser");
 const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const DATA_DIR = path.join(__dirname, "data");
-const RECORDINGS_PATH = path.join(DATA_DIR, "recordings.json");
+const USERS_PATH = path.join(DATA_DIR, "users.json");
+const FOLDERS_PATH = path.join(DATA_DIR, "folders.json");
+const VIDEOS_PATH = path.join(DATA_DIR, "videos.json");
+
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-// Ensure folders exist
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
-if (!fs.existsSync(RECORDINGS_PATH)) fs.writeFileSync(RECORDINGS_PATH, "[]", "utf-8");
+// Ensure folders/files exist
+for (const p of [DATA_DIR, UPLOADS_DIR, PUBLIC_DIR]) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+for (const p of [USERS_PATH, FOLDERS_PATH, VIDEOS_PATH]) {
+  if (!fs.existsSync(p)) fs.writeFileSync(p, "[]", "utf-8");
+}
 
-// In-memory sessions: token -> { role, username }
+// In-memory sessions: token -> { userId, role, username }
 const sessions = new Map();
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(express.static(PUBLIC_DIR));
-app.use("/uploads", express.static(UPLOADS_DIR)); // serve mp3 files
+app.use("/uploads", express.static(UPLOADS_DIR));
 
-function readRecordings() {
+// ---------- helpers ----------
+function readJsonArray(filePath) {
   try {
-    const raw = fs.readFileSync(RECORDINGS_PATH, "utf-8");
+    const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -37,18 +45,47 @@ function readRecordings() {
   }
 }
 
-function writeRecordings(list) {
-  fs.writeFileSync(RECORDINGS_PATH, JSON.stringify(list, null, 2), "utf-8");
+function writeJsonArray(filePath, arr) {
+  fs.writeFileSync(filePath, JSON.stringify(arr, null, 2), "utf-8");
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function createId(prefix = "") {
+  return prefix + crypto.randomBytes(10).toString("hex");
 }
 
 function createToken() {
-  return crypto.randomBytes(24).toString("hex");
+  const base = crypto.randomBytes(24).toString("hex");
+  const secret = process.env.SESSION_SECRET || "devsecret";
+  const sig = crypto.createHmac("sha256", secret).update(base).digest("hex").slice(0, 16);
+  return `${base}.${sig}`;
+}
+
+function sanitizeFilename(name) {
+  return String(name || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function isAudioOrVideo(file) {
+  const ext = String(file.originalname || "").toLowerCase();
+  const okExt = ext.endsWith(".mp3") || ext.endsWith(".mp4") || ext.endsWith(".webm");
+  const mime = String(file.mimetype || "");
+  const okMime = mime.startsWith("audio/") || mime.startsWith("video/");
+  return okExt || okMime;
+}
+
+function getMe(req) {
+  const token = req.cookies.session;
+  if (!token) return null;
+  return sessions.get(token) || null;
 }
 
 function requireAuth(req, res, next) {
-  const token = req.cookies.session;
-  if (!token || !sessions.has(token)) return res.status(401).json({ error: "Unauthorized" });
-  req.user = sessions.get(token);
+  const me = getMe(req);
+  if (!me) return res.status(401).json({ error: "Unauthorized" });
+  req.user = me;
   next();
 }
 
@@ -57,47 +94,91 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// Multer for MP3 uploads
+// ---------- Multer ----------
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
-    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safe = sanitizeFilename(file.originalname);
     const unique = `${Date.now()}_${crypto.randomBytes(6).toString("hex")}_${safe}`;
     cb(null, unique);
   },
 });
 
-function fileFilter(req, file, cb) {
-  const okMime = file.mimetype === "audio/mpeg" || file.mimetype === "audio/mp3";
-  const okExt = file.originalname.toLowerCase().endsWith(".mp3");
-  if (okMime || okExt) cb(null, true);
-  else cb(new Error("Only MP3 files are allowed"));
-}
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (isAudioOrVideo(file)) cb(null, true);
+    else cb(new Error("Only MP3/MP4/WEBM files are allowed"));
+  },
+  limits: { fileSize: 250 * 1024 * 1024 }, // 250MB
+});
 
-const upload = multer({ storage, fileFilter, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB
+// ---------- Auth ----------
+app.post("/api/signup", async (req, res) => {
+  const { username, email, password, adminCode } = req.body || {};
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: "Missing username/email/password" });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  }
 
-// --- Auth APIs ---
+  const users = readJsonArray(USERS_PATH);
+  const uname = String(username).trim();
+  const mail = String(email).trim().toLowerCase();
 
-app.post("/api/login", (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: "Missing username/password" });
+  if (users.some((u) => u.username.toLowerCase() === uname.toLowerCase())) {
+    return res.status(409).json({ error: "Username already exists" });
+  }
+  if (users.some((u) => u.email.toLowerCase() === mail)) {
+    return res.status(409).json({ error: "Email already exists" });
+  }
 
-  const isAdmin =
-    username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD;
+  // role rules:
+  // - if FIRST_USER_IS_ADMIN=true and users empty => first user becomes admin
+  // - else, admin only if adminCode matches ADMIN_INVITE_CODE (when set)
+  let role = "user";
+  const firstAdmin = String(process.env.FIRST_USER_IS_ADMIN || "").toLowerCase() === "true";
+  if (firstAdmin && users.length === 0) role = "admin";
 
-  const role = isAdmin ? "admin" : "user";
+  const invite = String(process.env.ADMIN_INVITE_CODE || "").trim();
+  if (invite && adminCode && String(adminCode).trim() === invite) role = "admin";
 
-  const token = createToken();
-  sessions.set(token, { role, username });
+  const passwordHash = await bcrypt.hash(String(password), 10);
 
-  // cookie for session
-  res.cookie("session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    // secure: true, // enable when using HTTPS
+  users.push({
+    id: createId("usr_"),
+    username: uname,
+    email: mail,
+    passwordHash,
+    role,
+    createdAt: nowIso(),
   });
 
-  res.json({ role });
+  writeJsonArray(USERS_PATH, users);
+  res.json({ ok: true });
+});
+
+app.post("/api/login", async (req, res) => {
+  const { identifier, password } = req.body || {};
+  if (!identifier || !password) return res.status(400).json({ error: "Missing identifier/password" });
+
+  const users = readJsonArray(USERS_PATH);
+  const idf = String(identifier).trim().toLowerCase();
+
+  const user = users.find(
+    (u) => u.username.toLowerCase() === idf || u.email.toLowerCase() === idf
+  );
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+
+  const ok = await bcrypt.compare(String(password), user.passwordHash);
+  if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+  const token = createToken();
+  sessions.set(token, { userId: user.id, role: user.role, username: user.username });
+
+  res.cookie("session", token, { httpOnly: true, sameSite: "lax" });
+  res.json({ role: user.role, username: user.username });
 });
 
 app.post("/api/logout", (req, res) => {
@@ -111,57 +192,200 @@ app.get("/api/me", requireAuth, (req, res) => {
   res.json({ role: req.user.role, username: req.user.username });
 });
 
-// --- Recordings APIs ---
-
-app.get("/api/recordings", requireAuth, (req, res) => {
-  const list = readRecordings();
-  res.json(list);
+// ---------- Folders ----------
+app.get("/api/folders", requireAuth, (req, res) => {
+  res.json(readJsonArray(FOLDERS_PATH));
 });
 
-app.post(
-  "/api/recordings",
-  requireAuth,
-  requireAdmin,
-  upload.single("file"),
-  (req, res) => {
-    const title = (req.body?.title || "").trim();
-    const description = (req.body?.description || "").trim();
+app.post("/api/folders", requireAuth, requireAdmin, (req, res) => {
+  const { exam, name } = req.body || {};
+  const ex = String(exam || "").trim().toUpperCase();
+  const nm = String(name || "").trim();
 
-    if (!title) {
-      // remove uploaded file if title missing
-      if (req.file?.path) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "Title is required" });
-    }
-    if (!req.file) return res.status(400).json({ error: "MP3 file is required" });
+  if (!["IELTS", "SAT"].includes(ex)) return res.status(400).json({ error: "Exam must be IELTS or SAT" });
+  if (!nm) return res.status(400).json({ error: "Folder name required" });
 
-    const list = readRecordings();
-
-    const item = {
-      id: crypto.randomBytes(10).toString("hex"),
-      title,
-      description,
-      filename: req.file.filename,
-      url: `/uploads/${req.file.filename}`,
-      createdAt: new Date().toISOString(),
-    };
-
-    list.unshift(item);
-    writeRecordings(list);
-
-    res.json(item);
+  const folders = readJsonArray(FOLDERS_PATH);
+  if (folders.some((f) => f.exam === ex && f.name.toLowerCase() === nm.toLowerCase())) {
+    return res.status(409).json({ error: "Folder already exists" });
   }
-);
 
-app.delete("/api/recordings/:id", requireAuth, requireAdmin, (req, res) => {
+  const folder = { id: createId("fld_"), exam: ex, name: nm, createdAt: nowIso() };
+  folders.push(folder);
+  writeJsonArray(FOLDERS_PATH, folders);
+  res.json(folder);
+});
+
+app.put("/api/folders/:id", requireAuth, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const list = readRecordings();
-  const idx = list.findIndex((x) => x.id === id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
+  const nm = String(req.body?.name || "").trim();
+  if (!nm) return res.status(400).json({ error: "Folder name required" });
 
-  const [removed] = list.splice(idx, 1);
-  writeRecordings(list);
+  const folders = readJsonArray(FOLDERS_PATH);
+  const idx = folders.findIndex((f) => f.id === id);
+  if (idx === -1) return res.status(404).json({ error: "Folder not found" });
 
-  // remove file
+  const ex = folders[idx].exam;
+  if (folders.some((f) => f.id !== id && f.exam === ex && f.name.toLowerCase() === nm.toLowerCase())) {
+    return res.status(409).json({ error: "Folder name already used" });
+  }
+
+  folders[idx].name = nm;
+  folders[idx].updatedAt = nowIso();
+  writeJsonArray(FOLDERS_PATH, folders);
+  res.json(folders[idx]);
+});
+
+app.delete("/api/folders/:id", requireAuth, requireAdmin, (req, res) => {
+  const { id } = req.params;
+
+  const folders = readJsonArray(FOLDERS_PATH);
+  const idx = folders.findIndex((f) => f.id === id);
+  if (idx === -1) return res.status(404).json({ error: "Folder not found" });
+
+  // delete videos inside this folder too
+  const videos = readJsonArray(VIDEOS_PATH);
+  const toDelete = videos.filter((v) => v.folderId === id);
+
+  for (const v of toDelete) {
+    if (v.filename) {
+      const p = path.join(UPLOADS_DIR, v.filename);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+  }
+
+  writeJsonArray(VIDEOS_PATH, videos.filter((v) => v.folderId !== id));
+
+  folders.splice(idx, 1);
+  writeJsonArray(FOLDERS_PATH, folders);
+
+  res.json({ ok: true, deletedVideos: toDelete.length });
+});
+
+// ---------- Videos ----------
+app.get("/api/videos", requireAuth, (req, res) => {
+  const ex = req.query?.exam ? String(req.query.exam).trim().toUpperCase() : null;
+  const fid = req.query?.folderId ? String(req.query.folderId).trim() : null;
+
+  const folders = readJsonArray(FOLDERS_PATH);
+  const folderMap = new Map(folders.map((f) => [f.id, f]));
+
+  let videos = readJsonArray(VIDEOS_PATH);
+
+  if (fid) videos = videos.filter((v) => v.folderId === fid);
+
+  if (ex && ["IELTS", "SAT"].includes(ex)) {
+    const allowed = new Set(folders.filter((f) => f.exam === ex).map((f) => f.id));
+    videos = videos.filter((v) => allowed.has(v.folderId));
+  }
+
+  res.json(
+    videos.map((v) => ({
+      ...v,
+      folder: folderMap.get(v.folderId) || null,
+    }))
+  );
+});
+
+app.post("/api/videos", requireAuth, requireAdmin, upload.single("file"), (req, res) => {
+  const title = String(req.body?.title || "").trim();
+  const description = String(req.body?.description || "").trim();
+  const folderId = String(req.body?.folderId || "").trim();
+
+  if (!title) {
+    if (req.file?.path) fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: "Title is required" });
+  }
+  if (!folderId) {
+    if (req.file?.path) fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: "Folder is required" });
+  }
+  if (!req.file) return res.status(400).json({ error: "File is required" });
+
+  const folders = readJsonArray(FOLDERS_PATH);
+  if (!folders.some((f) => f.id === folderId)) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: "Invalid folder" });
+  }
+
+  const videos = readJsonArray(VIDEOS_PATH);
+
+  const filename = req.file.filename;
+  const url = `/uploads/${filename}`;
+  // const ext = path.extname(filename).toLowerCase();
+
+  // const item = {
+  //   id: createId("vid_"),
+  //   title,
+  //   description,
+  //   folderId,
+  //   filename,
+  //   url,
+  //   kind: ext === ".mp3" ? "audio" : "video",
+  //   createdAt: nowIso(),
+  //   updatedAt: nowIso(),
+  // };
+
+  const mime = String(req.file.mimetype || "");
+  const kind = mime.startsWith("video/") ? "video" : "audio";
+
+  const item = {
+    id: createId("vid_"),
+    title,
+    description,
+    folderId,
+    filename,
+    url,
+    kind,
+    mime,                 // store mime for debugging/UI (optional but useful)
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+
+  videos.unshift(item);
+  writeJsonArray(VIDEOS_PATH, videos);
+
+  res.json(item);
+});
+
+app.put("/api/videos/:id", requireAuth, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { title, description, folderId } = req.body || {};
+
+  const videos = readJsonArray(VIDEOS_PATH);
+  const idx = videos.findIndex((v) => v.id === id);
+  if (idx === -1) return res.status(404).json({ error: "Video not found" });
+
+  if (title !== undefined) {
+    const t = String(title).trim();
+    if (!t) return res.status(400).json({ error: "Title cannot be empty" });
+    videos[idx].title = t;
+  }
+  if (description !== undefined) {
+    videos[idx].description = String(description).trim();
+  }
+  if (folderId !== undefined) {
+    const fid = String(folderId).trim();
+    const folders = readJsonArray(FOLDERS_PATH);
+    if (!folders.some((f) => f.id === fid)) return res.status(400).json({ error: "Invalid folder" });
+    videos[idx].folderId = fid;
+  }
+
+  videos[idx].updatedAt = nowIso();
+  writeJsonArray(VIDEOS_PATH, videos);
+  res.json(videos[idx]);
+});
+
+app.delete("/api/videos/:id", requireAuth, requireAdmin, (req, res) => {
+  const { id } = req.params;
+
+  const videos = readJsonArray(VIDEOS_PATH);
+  const idx = videos.findIndex((v) => v.id === id);
+  if (idx === -1) return res.status(404).json({ error: "Video not found" });
+
+  const [removed] = videos.splice(idx, 1);
+  writeJsonArray(VIDEOS_PATH, videos);
+
   if (removed?.filename) {
     const p = path.join(UPLOADS_DIR, removed.filename);
     if (fs.existsSync(p)) fs.unlinkSync(p);
@@ -170,7 +394,7 @@ app.delete("/api/recordings/:id", requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Serve SPA fallback (optional)
+// SPA fallback
 app.get("*", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "usr_eb2cdfc1ab633105443c",
+    "username": "Admin",
+    "email": "test2@gmail.com",
+    "passwordHash": "$2a$10$17CveCqlOaT8ICdsj8Vp8eE28kdkfFIgd/rcSORIM/ij5p8jbGmqq",
+    "role": "admin",
+    "createdAt": "2026-01-14T15:28:05.991Z"
+  },
+  {
+    "id": "usr_ce2703ea686d16741794",
+    "username": "User",
+    "email": "test@gmail.com",
+    "passwordHash": "$2a$10$20QzzkX603RW7A2q8jzpQOWqRAggNqZlS5yi63o/BbS2Grg/H36De",
+    "role": "user",
+    "createdAt": "2026-01-14T15:29:59.607Z"
+  }
+]
