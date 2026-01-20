@@ -52,6 +52,14 @@ export function Hero() {
           <a href="#how-it-works" className="text-sm text-[#5a6f84] hover:text-[#1e3a5f] transition-all duration-300 hover:scale-105">How It Works</a>
           <a href="#about" className="text-sm text-[#5a6f84] hover:text-[#1e3a5f] transition-all duration-300 hover:scale-105">About</a>
           {user ? (
+            <Link
+              to="/lecture-library"
+              className="text-sm text-[#5a6f84] hover:text-[#1e3a5f] transition-all duration-300 hover:scale-105"
+            >
+              Lecture Library
+            </Link>
+          ) : null}
+          {user ? (
             <>
               <span className="text-sm text-[#1e3a5f] font-medium">
                 {user.user_metadata?.name || user.email}

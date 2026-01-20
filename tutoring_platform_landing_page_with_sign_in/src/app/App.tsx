@@ -13,6 +13,8 @@ import { Footer } from "@/app/components/Footer";
 import { VideoDemos } from "@/app/pages/VideoDemos";
 import { CoursesPage } from "@/app/pages/CoursesPage";
 import { SignInPage } from "@/app/pages/SignInPage";
+import { LectureLibrary } from "@/app/pages/LectureLibrary";
+
 
 function LandingPage() {
   return (
@@ -39,6 +41,7 @@ export default function App() {
         <Route path="/video-demos" element={<VideoDemos />} />
         <Route path="/courses" element={<CoursesPage />} />
         <Route path="/signin" element={<SignInPage />} />
+        <Route path="/lecture-library" element={<LectureLibrary />} />
       </Routes>
     </BrowserRouter>
   );

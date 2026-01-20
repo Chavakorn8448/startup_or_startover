@@ -1,0 +1,269 @@
+import { ArrowLeft, ChevronRight, Folder, Play } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+
+type LectureVideo = {
+  id: number;
+  title: string;
+  duration: string;
+  thumbnail: string;
+  tutor: string;
+  tag: string;
+};
+
+type FolderView = {
+  key: string;
+  label: string;
+  subtitle: string;
+  badge: string;
+  videos: LectureVideo[];
+};
+
+// Temporary mock data (replace with Supabase later)
+const LIBRARY: FolderView[] = [
+  {
+    key: "sat",
+    label: "SAT",
+    subtitle: "Math + Verbal lesson clips",
+    badge: "Target: 1550+",
+    videos: [
+      {
+        id: 1,
+        tag: "Math",
+        title: "Algebra: Problem Solving Patterns",
+        duration: "12:30",
+        thumbnail:
+          "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=800",
+        tutor: "Alex Chen",
+      },
+      {
+        id: 2,
+        tag: "Math",
+        title: "Geometry: Fast Rules & Shortcuts",
+        duration: "15:45",
+        thumbnail:
+          "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=800",
+        tutor: "Alex Chen",
+      },
+      {
+        id: 3,
+        tag: "Verbal",
+        title: "Reading: How to Find the Right Evidence",
+        duration: "18:20",
+        thumbnail:
+          "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=800",
+        tutor: "Sarah Lin",
+      },
+    ],
+  },
+  {
+    key: "ielts",
+    label: "IELTS",
+    subtitle: "Reading + Writing + Speaking + Listening",
+    badge: "Band 9.0",
+    videos: [
+      {
+        id: 11,
+        tag: "Reading",
+        title: "Skimming & Scanning (Band 8–9)",
+        duration: "16:30",
+        thumbnail:
+          "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=800",
+        tutor: "Emma Wilson",
+      },
+      {
+        id: 12,
+        tag: "Writing",
+        title: "Task 2 Essay Structure That Scores",
+        duration: "20:45",
+        thumbnail:
+          "https://images.unsplash.com/photo-1455390582262-044cdead277a?w=800",
+        tutor: "David Park",
+      },
+      {
+        id: 13,
+        tag: "Speaking",
+        title: "Part 2 Cue Card: What Examiners Want",
+        duration: "17:25",
+        thumbnail:
+          "https://images.unsplash.com/photo-1475721027785-f74eccf877e2?w=800",
+        tutor: "Michael Brown",
+      },
+    ],
+  },
+];
+
+export function LectureLibrary() {
+  const [activeFolderKey, setActiveFolderKey] = useState<string | null>(null);
+
+  const activeFolder = useMemo(() => {
+    if (!activeFolderKey) return null;
+    return LIBRARY.find((f) => f.key === activeFolderKey) ?? null;
+  }, [activeFolderKey]);
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* Top nav */}
+      <nav className="border-b border-[#dae3ed]">
+        <div className="container mx-auto px-4 lg:px-8 py-6 flex items-center justify-between">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-[#1e3a5f] hover:text-[#3b729e] transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="font-medium">Back to Home</span>
+          </Link>
+
+          <div className="hidden sm:flex items-center gap-2 text-sm text-[#5a6f84]">
+            <span>Library</span>
+            {activeFolder ? (
+              <>
+                <ChevronRight className="w-4 h-4" />
+                <span className="text-[#1e3a5f] font-medium">
+                  {activeFolder.label}
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </nav>
+
+      <div className="container mx-auto px-4 lg:px-8 py-12">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-[#0a1628] mb-4">
+            Lecture Library
+          </h1>
+          <p className="text-lg text-[#5a6f84] max-w-2xl mx-auto">
+            Your lesson clips are organized into folders. Choose a folder to see
+            all videos inside.
+          </p>
+        </div>
+
+        {/* Folder view */}
+        {!activeFolder ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {LIBRARY.map((folder) => (
+              <button
+                key={folder.key}
+                onClick={() => setActiveFolderKey(folder.key)}
+                className="text-left group bg-white border border-[#dae3ed] rounded-2xl p-6 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#dae3ed] to-[#9ab8ce]/40 flex items-center justify-center border border-[#9ab8ce]/30">
+                      <Folder className="w-6 h-6 text-[#1e3a5f]" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <h2 className="text-2xl font-bold text-[#0a1628]">
+                          {folder.label}
+                        </h2>
+                        <span className="px-3 py-1 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white text-xs font-medium rounded-full">
+                          {folder.badge}
+                        </span>
+                      </div>
+                      <p className="text-sm text-[#5a6f84] mt-1">
+                        {folder.subtitle}
+                      </p>
+                      <p className="text-sm text-[#5a6f84] mt-3">
+                        {folder.videos.length} videos
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-[#5a6f84] group-hover:text-[#1e3a5f] transition-colors">
+                    <ChevronRight className="w-6 h-6" />
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="max-w-6xl mx-auto">
+            {/* Folder header */}
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-[#dae3ed] to-[#9ab8ce]/40 flex items-center justify-center border border-[#9ab8ce]/30">
+                    <Folder className="w-6 h-6 text-[#1e3a5f]" />
+                  </div>
+                  <h2 className="text-3xl font-bold text-[#0a1628]">
+                    {activeFolder.label}
+                  </h2>
+                  <span className="px-3 py-1 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white text-sm font-medium rounded-full">
+                    {activeFolder.badge}
+                  </span>
+                </div>
+                <p className="text-[#5a6f84] mt-2">{activeFolder.subtitle}</p>
+              </div>
+
+              <button
+                onClick={() => setActiveFolderKey(null)}
+                className="inline-flex items-center justify-center px-5 py-2.5 bg-white text-[#1e3a5f] border-2 border-[#9ab8ce] text-sm font-medium rounded-lg hover:border-[#3b729e] hover:bg-[#dae3ed]/30 hover:scale-105 transition-all duration-300"
+              >
+                Back to folders
+              </button>
+            </div>
+
+            {/* Videos grid (thumbnails only; no embedded video) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {activeFolder.videos.map((video) => (
+                <div
+                  key={video.id}
+                  className="group bg-white border border-[#dae3ed] rounded-xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:scale-105"
+                >
+                  <div className="relative aspect-video bg-gray-200 overflow-hidden">
+                    <img
+                      src={video.thumbnail}
+                      alt={video.title}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center">
+                        <Play className="w-8 h-8 text-[#1e3a5f] ml-1" />
+                      </div>
+                    </div>
+                    <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/80 text-white text-xs rounded">
+                      {video.duration}
+                    </div>
+                  </div>
+
+                  <div className="p-4">
+                    <div className="inline-block px-3 py-1 bg-[#dae3ed]/60 border border-[#dae3ed] text-[#1e3a5f] text-xs font-semibold rounded-full mb-3">
+                      {video.tag}
+                    </div>
+                    <h3 className="font-semibold text-[#0a1628] mb-2 line-clamp-2">
+                      {video.title}
+                    </h3>
+                    <p className="text-sm text-[#5a6f84]">{video.tutor}</p>
+                    <p className="text-xs text-[#5a6f84] mt-2">
+                      (Video will open here later — placeholder for now)
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* CTA */}
+            <div className="mt-14 text-center bg-gradient-to-br from-[#dae3ed] to-[#9ab8ce]/30 rounded-2xl p-10 border border-[#9ab8ce]/20">
+              <h3 className="text-2xl font-bold text-[#0a1628] mb-3">
+                Want a guided plan for this folder?
+              </h3>
+              <p className="text-[#5a6f84] mb-6 max-w-2xl mx-auto">
+                Book a free trial session and we’ll build a personalized roadmap
+                for your target score.
+              </p>
+              <Link
+                to="/video-demos"
+                className="inline-block px-9 py-4 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white font-medium rounded-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
+              >
+                Book a Free Trial
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
