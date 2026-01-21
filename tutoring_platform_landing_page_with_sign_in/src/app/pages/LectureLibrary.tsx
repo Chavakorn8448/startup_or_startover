@@ -1,164 +1,566 @@
-import { ArrowLeft, ChevronRight, Folder, Play, ChevronDown, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Folder,
+  Play,
+  ChevronDown,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 import { projectId, publicAnonKey } from "/utils/supabase/info";
 import { useIsAdmin } from "@/app/hooks/useIsAdmin";
 
+/* =======================
+   Types
+======================= */
+
 type LectureVideo = {
-  id: number;
+  id: string;
   title: string;
   duration: string;
   thumbnail: string;
   tutor: string;
   tag: string;
+  video_path?: string;
+};
+
+type FolderRow = {
+  id: string;
+  key: string;
+  label: string;
+  subtitle: string | null;
+  badge: string | null;
+  parent_folder_id: string | null;
+  created_at?: string;
+};
+
+type VideoRow = {
+  id: string;
+  folder_id: string;
+  title: string | null;
+  duration: string | null;
+  thumbnail: string | null;
+  tutor: string | null;
+  tag: string | null;
+  video_path: string | null;
+  created_at?: string;
 };
 
 type FolderView = {
+  id: string;
   key: string;
   label: string;
   subtitle: string;
   badge: string;
+  parentId: string | null;
   videos: LectureVideo[];
 };
 
-// Temporary mock data (replace with Supabase later)
-const LIBRARY: FolderView[] = [
-  {
-    key: "sat",
-    label: "SAT",
-    subtitle: "Math + Verbal lesson clips",
-    badge: "Target: 1550+",
-    videos: [
-      {
-        id: 1,
-        tag: "Math",
-        title: "Algebra: Problem Solving Patterns",
-        duration: "12:30",
-        thumbnail: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=800",
-        tutor: "Alex Chen",
-      },
-      {
-        id: 2,
-        tag: "Math",
-        title: "Geometry: Fast Rules & Shortcuts",
-        duration: "15:45",
-        thumbnail: "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=800",
-        tutor: "Alex Chen",
-      },
-      {
-        id: 3,
-        tag: "Verbal",
-        title: "Reading: How to Find the Right Evidence",
-        duration: "18:20",
-        thumbnail: "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=800",
-        tutor: "Sarah Lin",
-      },
-    ],
-  },
-  {
-    key: "ielts",
-    label: "IELTS",
-    subtitle: "Reading + Writing + Speaking + Listening",
-    badge: "Band 9.0",
-    videos: [
-      {
-        id: 11,
-        tag: "Reading",
-        title: "Skimming & Scanning (Band 8–9)",
-        duration: "16:30",
-        thumbnail: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=800",
-        tutor: "Emma Wilson",
-      },
-      {
-        id: 12,
-        tag: "Writing",
-        title: "Task 2 Essay Structure That Scores",
-        duration: "20:45",
-        thumbnail: "https://images.unsplash.com/photo-1455390582262-044cdead277a?w=800",
-        tutor: "David Park",
-      },
-      {
-        id: 13,
-        tag: "Speaking",
-        title: "Part 2 Cue Card: What Examiners Want",
-        duration: "17:25",
-        thumbnail: "https://images.unsplash.com/photo-1475721027785-f74eccf877e2?w=800",
-        tutor: "Michael Brown",
-      },
-    ],
-  },
-];
+/* =======================
+   Supabase client
+======================= */
+
+const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
+
+/* =======================
+   Component
+======================= */
 
 export function LectureLibrary() {
-  const [activeFolderKey, setActiveFolderKey] = useState<string | null>(null);
+  /* ---------- Core state ---------- */
+  const [folders, setFolders] = useState<FolderView[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
 
-  const [folders, setFolders] = useState<FolderView[]>(LIBRARY);
-
-  // Admin UI state
+  /* ---------- Admin dropdown + modal ---------- */
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [modal, setModal] = useState<
-    | { type: "addFolder" }
-    | { type: "renameFolder" }
-    | { type: "deleteFolder" }
-    | { type: "addVideo" }
-    | { type: "deleteVideo" }
+    | "addFolder"
+    | "renameFolder"
+    | "deleteFolder"
+    | "addVideo"
+    | "deleteVideo"
     | null
   >(null);
 
-  // Form fields
+  /* ---------- Modal form state ---------- */
+  const [targetFolderId, setTargetFolderId] = useState<string>(""); // rename/delete/addVideo/deleteVideo
+  const [targetVideoId, setTargetVideoId] = useState<string>(""); // deleteVideo
+
+  // Add folder: choose parent ("" = root)
+  const [parentFolderId, setParentFolderId] = useState<string>("");
+
+  // Folder fields
   const [folderKeyInput, setFolderKeyInput] = useState("");
   const [folderLabelInput, setFolderLabelInput] = useState("");
   const [folderSubtitleInput, setFolderSubtitleInput] = useState("");
   const [folderBadgeInput, setFolderBadgeInput] = useState("");
 
-  const [targetFolderKey, setTargetFolderKey] = useState<string>("");
+  // Video fields
   const [videoTitle, setVideoTitle] = useState("");
   const [videoTutor, setVideoTutor] = useState("");
   const [videoTag, setVideoTag] = useState("");
-  const [videoDuration, setVideoDuration] = useState("10:00");
-  const [videoThumbnail, setVideoThumbnail] = useState(
-    "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800"
-  );
-  const [targetVideoId, setTargetVideoId] = useState<string>("");
+  const [videoDuration, setVideoDuration] = useState("");
+  const [videoThumbnail, setVideoThumbnail] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
 
-  // Auto-select folder in modals
-  useEffect(() => {
-    if (activeFolderKey) setTargetFolderKey(activeFolderKey);
-  }, [activeFolderKey]);
-
-
-  // Logged-in user (read from access_token like your current app does)
+  /* ---------- Auth ---------- */
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     const checkUser = async () => {
-      const accessToken = localStorage.getItem("access_token");
-      if (!accessToken) {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
         setUser(null);
         return;
       }
-
-      const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
-
-      try {
-        const { data } = await supabase.auth.getUser(accessToken);
-        setUser(data.user ?? null);
-      } catch {
-        setUser(null);
-      }
+      const { data } = await supabase.auth.getUser(token);
+      setUser(data.user ?? null);
     };
-
     checkUser();
   }, []);
 
   const { isAdmin } = useIsAdmin(user);
 
-  const activeFolder = useMemo(() => {
-    if (!activeFolderKey) return null;
-    return folders.find((f) => f.key === activeFolderKey) ?? null;
-  }, [activeFolderKey, folders]);
+  /* =======================
+     Derived helpers
+======================= */
 
+  const activeFolder = useMemo(() => {
+    if (!activeFolderId) return null;
+    return folders.find((f) => f.id === activeFolderId) ?? null;
+  }, [activeFolderId, folders]);
+
+  const rootFolders = useMemo(() => folders.filter((f) => !f.parentId), [folders]);
+
+  const childFolders = useMemo(() => {
+    if (!activeFolder) return [];
+    return folders.filter((f) => f.parentId === activeFolder.id);
+  }, [folders, activeFolder]);
+
+  const breadcrumbChain = useMemo(() => {
+    if (!activeFolder) return [];
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const chain: FolderView[] = [];
+    let cur: FolderView | undefined = activeFolder;
+    while (cur) {
+      chain.unshift(cur);
+      if (!cur.parentId) break;
+      cur = byId.get(cur.parentId);
+    }
+    return chain;
+  }, [activeFolder, folders]);
+
+  const folderOptions = useMemo(() => {
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const getPath = (id: string) => {
+      const parts: string[] = [];
+      let cur: FolderView | undefined = byId.get(id);
+      while (cur) {
+        parts.unshift(cur.label);
+        if (!cur.parentId) break;
+        cur = byId.get(cur.parentId);
+      }
+      return parts.join(" / ");
+    };
+    return folders.map((f) => ({
+      id: f.id,
+      label: `${getPath(f.id)} (${f.key})`,
+    }));
+  }, [folders]);
+
+  const selectedFolderForModal = useMemo(() => {
+    if (!targetFolderId) return null;
+    return folders.find((f) => f.id === targetFolderId) ?? null;
+  }, [targetFolderId, folders]);
+
+  const videosForSelectedFolder = useMemo(() => {
+    return selectedFolderForModal?.videos ?? [];
+  }, [selectedFolderForModal]);
+
+  /* =======================
+     Load library from Supabase
+     Tables:
+       lecture_folders
+       lecture_videos
+======================= */
+
+  const loadLibrary = async () => {
+    const [
+      { data: folderRows, error: folderErr },
+      { data: videoRows, error: videoErr },
+    ] = await Promise.all([
+      supabase
+        .from("lecture_folders")
+        .select("id,key,label,subtitle,badge,parent_folder_id,created_at")
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("lecture_videos")
+        .select("id,folder_id,title,duration,thumbnail,tutor,tag,video_path,created_at")
+        .order("created_at", { ascending: true }),
+    ]);
+
+    if (folderErr) {
+      console.error(folderErr);
+      alert(folderErr.message);
+      return;
+    }
+    if (videoErr) {
+      console.error(videoErr);
+      alert(videoErr.message);
+      return;
+    }
+
+    const foldersMapped: FolderView[] = (folderRows ?? []).map((f: FolderRow) => ({
+      id: f.id,
+      key: f.key,
+      label: f.label,
+      subtitle: f.subtitle ?? "",
+      badge: f.badge ?? "",
+      parentId: f.parent_folder_id ?? null,
+      videos: [],
+    }));
+
+    const byFolder = new Map<string, LectureVideo[]>();
+    for (const v of (videoRows ?? []) as VideoRow[]) {
+      const arr = byFolder.get(v.folder_id) ?? [];
+      arr.push({
+        id: v.id,
+        title: v.title ?? "",
+        duration: v.duration ?? "",
+        thumbnail: v.thumbnail ?? "",
+        tutor: v.tutor ?? "",
+        tag: v.tag ?? "",
+        video_path: v.video_path ?? undefined,
+      });
+      byFolder.set(v.folder_id, arr);
+    }
+
+    const merged = foldersMapped.map((f) => ({
+      ...f,
+      videos: byFolder.get(f.id) ?? [],
+    }));
+
+    setFolders(merged);
+
+    if (activeFolderId) {
+      const stillExists = merged.some((f) => f.id === activeFolderId);
+      if (!stillExists) setActiveFolderId(null);
+    }
+  };
+
+  // Seed only if empty
+  const ensureDefaults = async () => {
+    const { data, error } = await supabase.from("lecture_folders").select("id").limit(1);
+    if (error) return;
+
+    if (!data || data.length === 0) {
+      await supabase.from("lecture_folders").insert([
+        {
+          key: "sat",
+          label: "SAT",
+          subtitle: "Math + Verbal lesson clips",
+          badge: "Target: 1550+",
+          parent_folder_id: null,
+        },
+        {
+          key: "ielts",
+          label: "IELTS",
+          subtitle: "Reading + Writing + Speaking + Listening",
+          badge: "Band 9.0",
+          parent_folder_id: null,
+        },
+      ]);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      await ensureDefaults();
+      await loadLibrary();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* =======================
+     Modal helpers
+======================= */
+
+  const resetModalFields = () => {
+    // for rename/delete/addVideo/deleteVideo: default to current folder (if inside one)
+    setTargetFolderId(activeFolder?.id ?? "");
+    setTargetVideoId("");
+
+    // for addFolder: default to current folder as parent (subfolder creation)
+    setParentFolderId(activeFolder?.id ?? "");
+
+    setFolderKeyInput("");
+    setFolderLabelInput("");
+    setFolderSubtitleInput("");
+    setFolderBadgeInput("");
+
+    setVideoTitle("");
+    setVideoTutor("");
+    setVideoTag("");
+    setVideoDuration("");
+    setVideoThumbnail("");
+
+    setVideoFile(null);
+  };
+
+  const openModal = (type: NonNullable<typeof modal>) => {
+    resetModalFields();
+    setModal(type);
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    resetModalFields();
+  };
+
+  const requireAdmin = () => {
+    if (!isAdmin) {
+      alert("Admin access required.");
+      return false;
+    }
+    return true;
+  };
+
+  const playVideo = async (video: LectureVideo) => {
+    try {
+      if (!video.video_path) {
+        alert("This video has no stored file path.");
+        return;
+      }
+
+      const { data, error } = await supabase.storage
+        .from("lecture-videos") // ⚠️ bucket name
+        .createSignedUrl(video.video_path, 60 * 10); // 10 minutes
+
+      if (error) throw error;
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message ?? "Failed to open video");
+    }
+  };
+
+  /* =======================
+     Admin actions (Supabase)
+======================= */
+
+  const addFolder = async () => {
+    if (!requireAdmin()) return;
+
+    const key = folderKeyInput.trim();
+    const label = folderLabelInput.trim();
+    const subtitle = folderSubtitleInput.trim();
+    const badge = folderBadgeInput.trim();
+
+    if (!key || !label) {
+      alert("Folder key + name are required.");
+      return;
+    }
+
+    const parent_id = parentFolderId ? parentFolderId : null;
+
+    const { error } = await supabase.from("lecture_folders").insert({
+      key,
+      label,
+      subtitle,
+      badge,
+      parent_folder_id: parent_id,
+    });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadLibrary();
+    closeModal();
+  };
+
+  const renameFolder = async () => {
+    if (!requireAdmin()) return;
+
+    const folder = selectedFolderForModal;
+    if (!folder) {
+      alert("Please select a folder.");
+      return;
+    }
+
+    const newLabel = folderLabelInput.trim();
+    const newSubtitle = folderSubtitleInput.trim();
+    const newBadge = folderBadgeInput.trim();
+
+    if (!newLabel) {
+      alert("New folder name is required.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("lecture_folders")
+      .update({
+        label: newLabel,
+        subtitle: newSubtitle,
+        badge: newBadge,
+      })
+      .eq("id", folder.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadLibrary();
+    closeModal();
+  };
+
+  const deleteFolder = async () => {
+    if (!requireAdmin()) return;
+
+    const folder = selectedFolderForModal;
+    if (!folder) {
+      alert("Please select a folder.");
+      return;
+    }
+
+    const ok = confirm(
+      `Delete folder "${folder.label}" and ALL videos inside?\n\nNote: This deletes only this folder. If it has subfolders, they will remain but become orphaned unless you handle recursive delete.`
+    );
+    if (!ok) return;
+
+    // Delete videos in this folder
+    await supabase.from("lecture_videos").delete().eq("folder_id", folder.id);
+
+    // Optional: move child folders up to root (so they don’t disappear from UI)
+    await supabase
+      .from("lecture_folders")
+      .update({ parent_folder_id: folder.parentId ?? null })
+      .eq("parent_folder_id", folder.id);
+
+    // Delete folder
+    const { error } = await supabase.from("lecture_folders").delete().eq("id", folder.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    if (activeFolderId === folder.id) {
+      setActiveFolderId(folder.parentId ?? null);
+    }
+
+    await loadLibrary();
+    closeModal();
+  };
+
+  const toNull = (s: string) => {
+    const t = s.trim();
+    return t.length ? t : null;
+  };
+
+
+  const addVideo = async () => {
+    if (!requireAdmin()) return;
+
+    const folder = selectedFolderForModal;
+    if (!folder) {
+      alert("Please select a folder to add the video into.");
+      return;
+    }
+
+    const title = videoTitle.trim();
+    if (!title) {
+      alert("Video title is required.");
+      return;
+    }
+
+    if (!videoFile) {
+      alert("Please upload an MP4 file.");
+      return;
+    }
+
+    // (Optional) allow any video type, but keep mp4-only if you want strict:
+    // if (videoFile.type !== "video/mp4") { alert("Only MP4 allowed"); return; }
+
+    // 1) Upload
+    const ext = videoFile.name.split(".").pop() || "mp4";
+    const safeExt = ext.toLowerCase() === "mp4" ? "mp4" : "mp4";
+    const fileName = `${crypto.randomUUID()}.${safeExt}`;
+    const storagePath = `folder-${folder.id}/${fileName}`;
+
+    const uploadRes = await supabase.storage
+      .from("lecture-videos")
+      .upload(storagePath, videoFile, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: "video/mp4",
+      });
+
+    if (uploadRes.error) {
+      alert(uploadRes.error.message);
+      return;
+    }
+
+    // 2) Insert DB row — ONLY title is required, everything else optional
+    const payload = {
+      folder_id: folder.id,
+      title, // required
+      tutor: toNull(videoTutor),
+      tag: toNull(videoTag),
+      duration: toNull(videoDuration),
+      thumbnail: toNull(videoThumbnail),
+      video_path: storagePath, // required for playback later
+    };
+
+    const { error } = await supabase.from("lecture_videos").insert(payload);
+
+    if (error) {
+      // rollback storage if DB fails
+      await supabase.storage.from("lecture-videos").remove([storagePath]);
+      alert(error.message);
+      return;
+    }
+
+    await loadLibrary();
+    closeModal();
+  };
+
+  const deleteVideo = async () => {
+    if (!requireAdmin()) return;
+
+    const folder = selectedFolderForModal;
+    if (!folder) {
+      alert("Please select a folder.");
+      return;
+    }
+    if (!targetVideoId) {
+      alert("Please select a video to delete.");
+      return;
+    }
+
+    const video = folder.videos.find((v) => v.id === targetVideoId);
+    const ok = confirm(`Delete video "${video?.title ?? "this video"}"?`);
+    if (!ok) return;
+
+    const { error } = await supabase.from("lecture_videos").delete().eq("id", targetVideoId);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadLibrary();
+    closeModal();
+  };
+
+  /* =======================
+     Render (UI kept the same)
+======================= */
 
   return (
     <div className="min-h-screen bg-white">
@@ -188,70 +590,48 @@ export function LectureLibrary() {
 
                 {adminMenuOpen ? (
                   <div className="absolute right-0 mt-2 w-64 bg-white border border-[#dae3ed] rounded-xl shadow-xl overflow-hidden z-50">
-                    <button
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-[#dae3ed]/30"
-                      onClick={() => {
-                        setAdminMenuOpen(false);
-                        setModal({ type: "addFolder" });
-                      }}
-                    >
-                      Add folder
-                    </button>
-
-                    <button
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-[#dae3ed]/30"
-                      onClick={() => {
-                        setAdminMenuOpen(false);
-                        setModal({ type: "renameFolder" });
-                      }}
-                    >
-                      Rename folder
-                    </button>
-
-                    <button
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-[#dae3ed]/30"
-                      onClick={() => {
-                        setAdminMenuOpen(false);
-                        setModal({ type: "deleteFolder" });
-                      }}
-                    >
-                      Delete folder
-                    </button>
-
-                    <div className="h-px bg-[#dae3ed]" />
-
-                    <button
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-[#dae3ed]/30"
-                      onClick={() => {
-                        setAdminMenuOpen(false);
-                        setModal({ type: "addVideo" });
-                      }}
-                    >
-                      Add video lecture
-                    </button>
-
-                    <button
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-[#dae3ed]/30"
-                      onClick={() => {
-                        setAdminMenuOpen(false);
-                        setModal({ type: "deleteVideo" });
-                      }}
-                    >
-                      Delete video lecture
-                    </button>
+                    {[
+                      ["addFolder", "Add folder"],
+                      ["renameFolder", "Rename folder"],
+                      ["deleteFolder", "Delete folder"],
+                      ["divider", ""],
+                      ["addVideo", "Add video lecture"],
+                      ["deleteVideo", "Delete video lecture"],
+                    ].map(([key, label]) =>
+                      key === "divider" ? (
+                        <div key="divider" className="h-px bg-[#dae3ed]" />
+                      ) : (
+                        <button
+                          key={key}
+                          className="w-full px-4 py-3 text-left text-sm hover:bg-[#dae3ed]/30"
+                          onClick={() => {
+                            setAdminMenuOpen(false);
+                            openModal(key as any);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      )
+                    )}
                   </div>
                 ) : null}
               </div>
             ) : null}
 
+            {/* Breadcrumb (multi-level) */}
             <div className="hidden sm:flex items-center gap-2 text-sm text-[#5a6f84]">
               <span>Library</span>
-              {activeFolder ? (
-                <>
+              {breadcrumbChain.map((f) => (
+                <span key={f.id} className="inline-flex items-center gap-2">
                   <ChevronRight className="w-4 h-4" />
-                  <span className="text-[#1e3a5f] font-medium">{activeFolder.label}</span>
-                </>
-              ) : null}
+                  <button
+                    className="text-[#1e3a5f] font-medium hover:text-[#3b729e]"
+                    onClick={() => setActiveFolderId(f.id)}
+                  >
+                    {f.label}
+                  </button>
+                </span>
+              ))}
             </div>
           </div>
         </div>
@@ -268,13 +648,13 @@ export function LectureLibrary() {
           </p>
         </div>
 
-        {/* Folder view */}
+        {/* Root view */}
         {!activeFolder ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
-            {folders.map((folder) => (
+            {rootFolders.map((folder) => (
               <button
-                key={folder.key}
-                onClick={() => setActiveFolderKey(folder.key)}
+                key={folder.id}
+                onClick={() => setActiveFolderId(folder.id)}
                 className="text-left group bg-white border border-[#dae3ed] rounded-2xl p-6 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
               >
                 <div className="flex items-start justify-between gap-4">
@@ -285,14 +665,18 @@ export function LectureLibrary() {
 
                     <div>
                       <div className="flex items-center gap-3">
-                        <h2 className="text-2xl font-bold text-[#0a1628]">{folder.label}</h2>
+                        <h2 className="text-2xl font-bold text-[#0a1628]">
+                          {folder.label}
+                        </h2>
                         <span className="px-3 py-1 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white text-xs font-medium rounded-full">
                           {folder.badge}
                         </span>
                       </div>
 
                       <p className="text-sm text-[#5a6f84] mt-1">{folder.subtitle}</p>
-                      <p className="text-sm text-[#5a6f84] mt-3">{folder.videos.length} videos</p>
+                      <p className="text-sm text-[#5a6f84] mt-3">
+                        {folder.videos.length} videos
+                      </p>
                     </div>
                   </div>
 
@@ -312,7 +696,9 @@ export function LectureLibrary() {
                   <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-[#dae3ed] to-[#9ab8ce]/40 flex items-center justify-center border border-[#9ab8ce]/30">
                     <Folder className="w-6 h-6 text-[#1e3a5f]" />
                   </div>
-                  <h2 className="text-3xl font-bold text-[#0a1628]">{activeFolder.label}</h2>
+                  <h2 className="text-3xl font-bold text-[#0a1628]">
+                    {activeFolder.label}
+                  </h2>
                   <span className="px-3 py-1 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white text-sm font-medium rounded-full">
                     {activeFolder.badge}
                   </span>
@@ -321,23 +707,74 @@ export function LectureLibrary() {
               </div>
 
               <button
-                onClick={() => setActiveFolderKey(null)}
+                onClick={() => setActiveFolderId(activeFolder.parentId ?? null)}
                 className="inline-flex items-center justify-center px-5 py-2.5 bg-white text-[#1e3a5f] border-2 border-[#9ab8ce] text-sm font-medium rounded-lg hover:border-[#3b729e] hover:bg-[#dae3ed]/30 hover:scale-105 transition-all duration-300"
               >
-                Back to folders
+                Back
               </button>
             </div>
 
-            {/* Videos grid (thumbnails only; no embedded video) */}
+            {/* Subfolders */}
+            {childFolders.length > 0 ? (
+              <div className="mb-10">
+                <h3 className="text-lg font-semibold text-[#0a1628] mb-4">
+                  Subfolders
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {childFolders.map((folder) => (
+                    <button
+                      key={folder.id}
+                      onClick={() => setActiveFolderId(folder.id)}
+                      className="text-left group bg-white border border-[#dae3ed] rounded-2xl p-6 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#dae3ed] to-[#9ab8ce]/40 flex items-center justify-center border border-[#9ab8ce]/30">
+                            <Folder className="w-6 h-6 text-[#1e3a5f]" />
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-3">
+                              <h2 className="text-2xl font-bold text-[#0a1628]">
+                                {folder.label}
+                              </h2>
+                              <span className="px-3 py-1 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white text-xs font-medium rounded-full">
+                                {folder.badge}
+                              </span>
+                            </div>
+
+                            <p className="text-sm text-[#5a6f84] mt-1">
+                              {folder.subtitle}
+                            </p>
+
+                            <p className="text-sm text-[#5a6f84] mt-3">
+                              {folder.videos.length} videos
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-[#5a6f84] group-hover:text-[#1e3a5f] transition-colors">
+                          <ChevronRight className="w-6 h-6" />
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Videos grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {activeFolder.videos.map((video) => (
-                <div
+                <button
                   key={video.id}
-                  className="group bg-white border border-[#dae3ed] rounded-xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:scale-105"
+                  type="button"
+                  onClick={() => playVideo(video)}
+                  className="group bg-white border border-[#dae3ed] rounded-xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:scale-105 text-left"
                 >
                   <div className="relative aspect-video bg-gray-200 overflow-hidden">
                     <img
-                      src={video.thumbnail}
+                      src={video.thumbnail?.trim() || "https://placehold.co/640x360?text=Video"}
                       alt={video.title}
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     />
@@ -349,90 +786,99 @@ export function LectureLibrary() {
                     </div>
 
                     <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/80 text-white text-xs rounded">
-                      {video.duration}
+                      {video.duration || "—"}
                     </div>
                   </div>
 
                   <div className="p-4">
                     <div className="inline-block px-3 py-1 bg-[#dae3ed]/60 border border-[#dae3ed] text-[#1e3a5f] text-xs font-semibold rounded-full mb-3">
-                      {video.tag}
+                      {video.tag || "Lecture"}
                     </div>
+
                     <h3 className="font-semibold text-[#0a1628] mb-2 line-clamp-2">
                       {video.title}
                     </h3>
-                    <p className="text-sm text-[#5a6f84]">{video.tutor}</p>
+
+                    <p className="text-sm text-[#5a6f84]">{video.tutor || "—"}</p>
+
                     <p className="text-xs text-[#5a6f84] mt-2">
-                      (Video will open here later — placeholder for now)
+                      (Click to play — coming next)
                     </p>
                   </div>
-                </div>
+                </button>
               ))}
-            </div>
-
-            {/* CTA */}
-            <div className="mt-14 text-center bg-gradient-to-br from-[#dae3ed] to-[#9ab8ce]/30 rounded-2xl p-10 border border-[#9ab8ce]/20">
-              <h3 className="text-2xl font-bold text-[#0a1628] mb-3">
-                Want a guided plan for this folder?
-              </h3>
-              <p className="text-[#5a6f84] mb-6 max-w-2xl mx-auto">
-                Book a free trial session and we’ll build a personalized roadmap for your target score.
-              </p>
-              <Link
-                to="/video-demos"
-                className="inline-block px-9 py-4 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white font-medium rounded-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
-              >
-                Book a Free Trial
-              </Link>
             </div>
           </div>
         )}
       </div>
-      {/* Admin Modal */}
+
+      {/* Admin modal */}
       {isAdmin && modal ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-lg bg-white rounded-2xl border border-[#dae3ed] shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#dae3ed]">
               <div className="font-semibold text-[#0a1628]">
-                {modal.type === "addFolder" && "Add folder"}
-                {modal.type === "renameFolder" && "Rename folder"}
-                {modal.type === "deleteFolder" && "Delete folder"}
-                {modal.type === "addVideo" && "Add video lecture"}
-                {modal.type === "deleteVideo" && "Delete video lecture"}
+                {modal === "addFolder" && "Add folder"}
+                {modal === "renameFolder" && "Rename folder"}
+                {modal === "deleteFolder" && "Delete folder"}
+                {modal === "addVideo" && "Add video lecture"}
+                {modal === "deleteVideo" && "Delete video lecture"}
               </div>
               <button
                 className="p-2 rounded-lg hover:bg-[#dae3ed]/40 transition"
-                onClick={() => setModal(null)}
+                onClick={closeModal}
               >
                 <X className="w-5 h-5 text-[#1e3a5f]" />
               </button>
             </div>
 
             <div className="px-6 py-5 space-y-4">
-              {/* Folder selector used by several modals */}
-              {(modal.type !== "addFolder") && (
+              {/* Add folder: choose parent */}
+              {modal === "addFolder" ? (
+                <div>
+                  <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
+                    Create inside
+                  </label>
+                  <select
+                    value={parentFolderId}
+                    onChange={(e) => setParentFolderId(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
+                  >
+                    <option value="">(Root)</option>
+                    {folderOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {/* For other modals: choose target folder */}
+              {modal !== "addFolder" ? (
                 <div>
                   <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
                     Target folder
                   </label>
                   <select
-                    value={targetFolderKey}
-                    onChange={(e) => setTargetFolderKey(e.target.value)}
+                    value={targetFolderId}
+                    onChange={(e) => setTargetFolderId(e.target.value)}
                     className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
                   >
                     <option value="" disabled>
                       Select a folder
                     </option>
-                    {folders.map((f) => (
-                      <option key={f.key} value={f.key}>
-                        {f.label} ({f.key})
+                    {folderOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
                       </option>
                     ))}
                   </select>
                 </div>
-              )}
+              ) : null}
 
-              {/* ADD FOLDER */}
-              {modal.type === "addFolder" ? (
+              {/* Add folder fields */}
+              {modal === "addFolder" ? (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
@@ -485,23 +931,54 @@ export function LectureLibrary() {
                 </>
               ) : null}
 
-              {/* RENAME FOLDER */}
-              {modal.type === "renameFolder" ? (
-                <div>
-                  <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
-                    New folder name
-                  </label>
-                  <input
-                    value={folderLabelInput}
-                    onChange={(e) => setFolderLabelInput(e.target.value)}
-                    placeholder="e.g., IELTS Speaking"
-                    className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
-                  />
-                </div>
+              {/* Rename folder */}
+              {modal === "renameFolder" ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
+                      New folder name
+                    </label>
+                    <input
+                      value={folderLabelInput}
+                      onChange={(e) => setFolderLabelInput(e.target.value)}
+                      placeholder="e.g., IELTS Speaking"
+                      className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
+                      New subtitle (optional)
+                    </label>
+                    <input
+                      value={folderSubtitleInput}
+                      onChange={(e) => setFolderSubtitleInput(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
+                      New badge (optional)
+                    </label>
+                    <input
+                      value={folderBadgeInput}
+                      onChange={(e) => setFolderBadgeInput(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
+                    />
+                  </div>
+                </>
               ) : null}
 
-              {/* ADD VIDEO */}
-              {modal.type === "addVideo" ? (
+              {/* Delete folder */}
+              {modal === "deleteFolder" ? (
+                <p className="text-sm text-[#5a6f84]">
+                  This will permanently delete the folder and videos inside.
+                </p>
+              ) : null}
+
+              {/* Add video */}
+              {modal === "addVideo" ? (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
@@ -558,17 +1035,33 @@ export function LectureLibrary() {
                     <input
                       value={videoThumbnail}
                       onChange={(e) => setVideoThumbnail(e.target.value)}
+                      placeholder="https://..."
                       className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
                     />
+                    <div>
+                      <label className="block text-sm font-medium text-[#1e3a5f] mb-1">
+                        Upload MP4
+                      </label>
+                      <input
+                        type="file"
+                        accept="video/mp4"
+                        onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                        className="w-full px-3 py-2 border border-[#dae3ed] rounded-lg"
+                      />
+                      <p className="text-xs text-[#5a6f84] mt-1">
+                        Upload an mp4 file. We'll store it in Supabase Storage (private).
+                      </p>
+                    </div>
+
                   </div>
                 </>
               ) : null}
 
-              {/* DELETE VIDEO */}
-              {modal.type === "deleteVideo" ? (
+              {/* Delete video */}
+              {modal === "deleteVideo" ? (
                 <>
                   <p className="text-sm text-[#5a6f84]">
-                    Choose a folder first, then choose which video to delete.
+                    Choose a folder first, then choose a video to delete.
                   </p>
 
                   <div>
@@ -583,133 +1076,33 @@ export function LectureLibrary() {
                       <option value="" disabled>
                         Select a video
                       </option>
-                      {(folders.find((f) => f.key === targetFolderKey)?.videos ?? []).map((v) => (
-                        <option key={v.id} value={String(v.id)}>
-                          {v.title} (id: {v.id})
+                      {videosForSelectedFolder.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.title}
                         </option>
                       ))}
                     </select>
                   </div>
                 </>
               ) : null}
-
-              {/* DELETE FOLDER */}
-              {modal.type === "deleteFolder" ? (
-                <p className="text-sm text-[#5a6f84]">
-                  This will remove the folder and its videos (local-only for now).
-                </p>
-              ) : null}
             </div>
 
             <div className="px-6 py-4 border-t border-[#dae3ed] flex items-center justify-end gap-3">
               <button
                 className="px-4 py-2 bg-white border border-[#dae3ed] text-[#1e3a5f] rounded-lg hover:bg-[#dae3ed]/30 transition"
-                onClick={() => setModal(null)}
+                onClick={closeModal}
               >
                 Cancel
               </button>
 
               <button
                 className="px-4 py-2 bg-gradient-to-r from-[#1e3a5f] to-[#3b729e] text-white rounded-lg hover:shadow-lg transition"
-                onClick={() => {
-                  // ----- ACTIONS -----
-                  if (modal.type === "addFolder") {
-                    const key = folderKeyInput.trim();
-                    const label = folderLabelInput.trim();
-                    if (!key || !label) return;
-
-                    if (folders.some((f) => f.key === key)) return;
-
-                    setFolders((prev) => [
-                      ...prev,
-                      {
-                        key,
-                        label,
-                        subtitle: folderSubtitleInput.trim() || "New folder",
-                        badge: folderBadgeInput.trim() || "New",
-                        videos: [],
-                      },
-                    ]);
-
-                    setFolderKeyInput("");
-                    setFolderLabelInput("");
-                    setFolderSubtitleInput("");
-                    setFolderBadgeInput("");
-                    setModal(null);
-                    return;
-                  }
-
-                  if (modal.type === "renameFolder") {
-                    if (!targetFolderKey) return;
-                    const newLabel = folderLabelInput.trim();
-                    if (!newLabel) return;
-
-                    setFolders((prev) =>
-                      prev.map((f) => (f.key === targetFolderKey ? { ...f, label: newLabel } : f))
-                    );
-
-                    setFolderLabelInput("");
-                    setModal(null);
-                    return;
-                  }
-
-                  if (modal.type === "deleteFolder") {
-                    if (!targetFolderKey) return;
-
-                    setFolders((prev) => prev.filter((f) => f.key !== targetFolderKey));
-                    if (activeFolderKey === targetFolderKey) setActiveFolderKey(null);
-
-                    setTargetFolderKey("");
-                    setModal(null);
-                    return;
-                  }
-
-                  if (modal.type === "addVideo") {
-                    if (!targetFolderKey) return;
-                    const title = videoTitle.trim();
-                    if (!title) return;
-
-                    const newId = Date.now(); // local-only unique id
-                    const newVideo = {
-                      id: newId,
-                      title,
-                      duration: videoDuration.trim() || "10:00",
-                      thumbnail: videoThumbnail.trim(),
-                      tutor: videoTutor.trim() || "Tutor",
-                      tag: videoTag.trim() || "Lesson",
-                    };
-
-                    setFolders((prev) =>
-                      prev.map((f) =>
-                        f.key === targetFolderKey ? { ...f, videos: [newVideo, ...f.videos] } : f
-                      )
-                    );
-
-                    setVideoTitle("");
-                    setVideoTutor("");
-                    setVideoTag("");
-                    setVideoDuration("10:00");
-                    setModal(null);
-                    return;
-                  }
-
-                  if (modal.type === "deleteVideo") {
-                    if (!targetFolderKey || !targetVideoId) return;
-
-                    const vid = Number(targetVideoId);
-
-                    setFolders((prev) =>
-                      prev.map((f) =>
-                        f.key === targetFolderKey
-                          ? { ...f, videos: f.videos.filter((v) => v.id !== vid) }
-                          : f
-                      )
-                    );
-
-                    setTargetVideoId("");
-                    setModal(null);
-                    return;
-                  }
+                onClick={async () => {
+                  if (modal === "addFolder") return addFolder();
+                  if (modal === "renameFolder") return renameFolder();
+                  if (modal === "deleteFolder") return deleteFolder();
+                  if (modal === "addVideo") return addVideo();
+                  if (modal === "deleteVideo") return deleteVideo();
                 }}
               >
                 Save
