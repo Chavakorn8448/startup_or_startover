@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 import { createClient } from "@supabase/supabase-js";
 import { projectId, publicAnonKey } from "/utils/supabase/info";
 import { useIsAdmin } from "@/app/hooks/useIsAdmin";
+import { useVideoFirstFrame } from "@/app/hooks/useVideoFirstFrame";
 
 /* =======================
    Types
@@ -773,10 +774,11 @@ export function LectureLibrary() {
                   className="group bg-white border border-[#dae3ed] rounded-xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:scale-105 text-left"
                 >
                   <div className="relative aspect-video bg-gray-200 overflow-hidden">
-                    <img
-                      src={video.thumbnail?.trim() || "https://placehold.co/640x360?text=Video"}
-                      alt={video.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    <VideoCardThumb
+                      supabase={supabase}
+                      videoPath={video.video_path}
+                      fallbackThumbnail={video.thumbnail}
+                      title={video.title}
                     />
 
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -1112,5 +1114,61 @@ export function LectureLibrary() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function VideoCardThumb({
+  supabase,
+  videoPath,
+  fallbackThumbnail,
+  title,
+}: {
+  supabase: any;
+  videoPath: string | null | undefined;
+  fallbackThumbnail: string | null | undefined;
+  title: string;
+}) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!videoPath) {
+        setSignedUrl(null);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.storage
+          .from("lecture-videos")
+          .createSignedUrl(videoPath, 60 * 60); // 1 hour
+
+        if (error) throw error;
+        if (!cancelled) setSignedUrl(data.signedUrl);
+      } catch {
+        if (!cancelled) setSignedUrl(null);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, videoPath]);
+
+  const firstFrame = useVideoFirstFrame(signedUrl);
+
+  const src =
+    fallbackThumbnail?.trim() ||
+    firstFrame ||
+    "https://placehold.co/640x360?text=Video";
+
+  return (
+    <img
+      src={src}
+      alt={title}
+      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+    />
   );
 }
