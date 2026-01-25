@@ -3,9 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <script>
-      // GitHub Pages SPA fallback
       var repo = "/startup_or_startover";
-      var path = location.pathname.replace(repo, "");
+      var path = location.pathname;
+
+      // If already includes repo, strip it
+      if (path.startsWith(repo)) path = path.slice(repo.length);
+
       location.replace(
         location.origin +
           repo +
